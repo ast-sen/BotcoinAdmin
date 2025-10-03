@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import AnalyticsModal from '../navigation/AnalyticsModal';
 
 export default function ProfileScreen() {
   const { admin, signOut } = useAuth();
+  const [analyticsModalVisible, setAnalyticsModalVisible] = useState(false);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -40,6 +42,10 @@ export default function ProfileScreen() {
     Alert.alert('Coming Soon', 'This feature is not yet implemented');
   };
 
+  const handleAnalytics = () => {
+    setAnalyticsModalVisible(true);
+  };
+
   const menuItems = [
     {
       icon: 'person-outline',
@@ -59,7 +65,7 @@ export default function ProfileScreen() {
     {
       icon: 'bar-chart-outline',
       title: 'Analytics',
-      onPress: handleComingSoon,
+      onPress: handleAnalytics, // Updated to open analytics modal
     },
     {
       icon: 'help-outline',
@@ -131,6 +137,12 @@ export default function ProfileScreen() {
           <Text style={styles.appVersion}>Admin App v1.0.0</Text>
         </View>
       </ScrollView>
+
+      {/* Analytics Modal */}
+      <AnalyticsModal
+        visible={analyticsModalVisible}
+        onClose={() => setAnalyticsModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
