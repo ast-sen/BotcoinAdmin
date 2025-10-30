@@ -17,32 +17,9 @@ import {
   TimeFrame,
   AnalyticsModalProps,
 } from '../types/analytics.types';
+import { getBottleAnalytics, getPeakHour, getBusiestDay } from '../services/analyticsService';
 
 const { width } = Dimensions.get('window');
-
-// Mock data - replace with your actual API calls
-const mockAnalyticsData: AnalyticsDataMap = {
-  day: {
-    bottles: 45,
-    change: 12,
-    trend: 'up',
-  },
-  week: {
-    bottles: 287,
-    change: -8,
-    trend: 'down',
-  },
-  month: {
-    bottles: 1234,
-    change: 25,
-    trend: 'up',
-  },
-  year: {
-    bottles: 14820,
-    change: 15,
-    trend: 'up',
-  },
-};
 
 const timeFrames: TimeFrame[] = [
   { key: 'day', label: 'Today', period: '24 hours' },
@@ -53,8 +30,11 @@ const timeFrames: TimeFrame[] = [
 
 export default function AnalyticsModal({ visible, onClose }: AnalyticsModalProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>('day');
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsDataMap>(mockAnalyticsData);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsDataMap>({} as AnalyticsDataMap);
   const [loading, setLoading] = useState<boolean>(false);
+  const [peakHour, setPeakHour] = useState<string>('Loading...');
+  const [busiestDay, setBusiestDay] = useState<string>('Loading...');
+  const [error, setError] = useState<string | null>(null);
 
   // Helper functions
   const getDivisor = (period: PeriodKey): number => {
@@ -77,23 +57,62 @@ export default function AnalyticsModal({ visible, onClose }: AnalyticsModalProps
     }
   };
 
-  // Simulate API call
-  const fetchAnalytics = async (period: PeriodKey): Promise<void> => {
+  // Fetch real analytics data from database
+  const fetchAnalytics = async (): Promise<void> => {
     setLoading(true);
-    // Replace this with your actual API call
-    setTimeout(() => {
-      // For demo purposes, we're using mock data
-      // In real implementation, you would fetch data based on the period
-      setAnalyticsData(mockAnalyticsData);
+    setError(null);
+    
+    try {
+      console.log('Fetching analytics data from database...');
+      
+      // Fetch all analytics data and additional metrics
+      const [analyticsResult, peakHourResult, busiestDayResult] = await Promise.all([
+        getBottleAnalytics(),
+        getPeakHour(),
+        getBusiestDay()
+      ]);
+      
+      console.log('Analytics data received:', analyticsResult);
+      
+      setAnalyticsData(analyticsResult);
+      setPeakHour(peakHourResult);
+      setBusiestDay(busiestDayResult);
+      
+    } catch (error) {
+      console.error('Failed to fetch analytics:', error);
+      setError('Failed to load analytics data. Please try again.');
+      
+      // Set fallback data on error
+      const fallbackData = {
+        bottles: 0,
+        change: 0,
+        trend: 'neutral' as TrendType
+      };
+      
+      setAnalyticsData({
+        day: fallbackData,
+        week: fallbackData,
+        month: fallbackData,
+        year: fallbackData
+      });
+      
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   useEffect(() => {
     if (visible) {
-      fetchAnalytics(selectedPeriod);
+      fetchAnalytics();
+      
+      // Set up auto-refresh every 30 seconds for real-time updates
+      const interval = setInterval(() => {
+        fetchAnalytics();
+      }, 30000);
+      
+      return () => clearInterval(interval);
     }
-  }, [visible, selectedPeriod]);
+  }, [visible]);
 
   const handlePeriodChange = (period: PeriodKey): void => {
     setSelectedPeriod(period);
@@ -110,6 +129,17 @@ export default function AnalyticsModal({ visible, onClose }: AnalyticsModalProps
 
   const renderStatCard = (timeFrame: TimeFrame) => {
     const data = analyticsData[timeFrame.key];
+    
+    // Handle case when data might not be loaded yet
+    if (!data) {
+      return (
+        <View key={timeFrame.key} style={styles.statCard}>
+          <Text style={styles.statPeriod}>{timeFrame.label}</Text>
+          <ActivityIndicator size="small" color="#007AFF" />
+        </View>
+      );
+    }
+    
     const changeColor = data.change > 0 ? '#28a745' : data.change < 0 ? '#dc3545' : '#6c757d';
     const changePrefix = data.change > 0 ? '+' : '';
 
@@ -140,7 +170,7 @@ export default function AnalyticsModal({ visible, onClose }: AnalyticsModalProps
     const currentData = analyticsData[selectedPeriod];
     const timeFrame = timeFrames.find((tf: TimeFrame) => tf.key === selectedPeriod);
     
-    if (!timeFrame) {
+    if (!timeFrame || !currentData) {
       return <View />;
     }
     
@@ -186,15 +216,15 @@ export default function AnalyticsModal({ visible, onClose }: AnalyticsModalProps
           <View style={styles.additionalMetrics}>
             <View style={styles.metricRow}>
               <Text style={styles.metricLabel}>Peak Hour:</Text>
-              <Text style={styles.metricValue}>2:00 PM - 3:00 PM</Text>
+              <Text style={styles.metricValue}>{peakHour}</Text>
             </View>
             <View style={styles.metricRow}>
               <Text style={styles.metricLabel}>Busiest Day:</Text>
-              <Text style={styles.metricValue}>Monday</Text>
+              <Text style={styles.metricValue}>{busiestDay}</Text>
             </View>
             <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Recycling Rate:</Text>
-              <Text style={styles.metricValue}>87%</Text>
+              <Text style={styles.metricLabel}>Total This Period:</Text>
+              <Text style={styles.metricValue}>{currentData.bottles.toLocaleString()}</Text>
             </View>
           </View>
         </View>
@@ -247,6 +277,23 @@ export default function AnalyticsModal({ visible, onClose }: AnalyticsModalProps
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#007AFF" />
               <Text style={styles.loadingText}>Loading analytics...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={48} color="#dc3545" />
+              <Text style={styles.errorTitle}>Failed to Load Data</Text>
+              <Text style={styles.errorMessage}>{error}</Text>
+              <TouchableOpacity 
+                style={styles.retryButton} 
+                onPress={() => fetchAnalytics()}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : Object.keys(analyticsData).length === 0 ? (
+            <View style={styles.noDataContainer}>
+              <Ionicons name="bar-chart" size={48} color="#6c757d" />
+              <Text style={styles.noDataText}>No data available</Text>
             </View>
           ) : (
             <>
@@ -324,6 +371,48 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   loadingText: {
+    fontSize: 16,
+    color: '#6c757d',
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#dc3545',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#6c757d',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  noDataContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  noDataText: {
     fontSize: 16,
     color: '#6c757d',
     marginTop: 16,
